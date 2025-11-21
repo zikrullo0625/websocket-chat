@@ -31,7 +31,7 @@ class MessageService
 
         $this->chatRepo->setLastMessage($message, $chat);
 
-        broadcast(new MessageSent($message, $dto->chat_id));
+//        broadcast(new MessageSent($message, $dto->chat_id));
 
         return $message;
     }

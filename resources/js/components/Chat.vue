@@ -29,28 +29,39 @@ export default {
             messages: [],
             newMessage: '',
             myId: Number(localStorage.getItem('userId')) || 0,
-            otherUser: null
+            otherUser: null,
+            tempMessageId: 0
         };
     },
     mounted() {
         this.fetchMessages();
         this.initializeWebsocket();
-        this.$nextTick(() => {
-            this.scrollBottom();
-        });
+        this.scrollBottom();
     },
     methods: {
         initializeWebsocket() {
-            const channel = window.Echo.channel('chat.' + this.$route.params.id);
+            const channel = window.Echo.private('chat.' + this.$route.params.id);
+            console.log(channel);
+
+            channel.listenForWhisper('message', (e) => {
+                console.log('Whisper received:', e);
+
+                this.messages.push({
+                    id: e.tempId,
+                    chat_id: e.chat_id,
+                    user_id: e.user_id,
+                    text: e.text,
+                    created_at: new Date().toISOString()
+                });
+
+                this.$nextTick(() => {
+                    this.scrollBottom();
+                });
+            });
+
 
             channel.listen('MessageSent', (e) => {
-                console.log(e)
-                if (e.message.user_id !== this.myId) {
-                    this.messages.push(e.message)
-                    this.$nextTick(() => {
-                        this.scrollBottom();
-                    });
-                }
+                console.log('MessageSent event:', e);
             });
         },
         async fetchMessages() {
@@ -72,18 +83,37 @@ export default {
             if (!this.newMessage.trim()) return;
 
             const chatId = this.$route.params.id;
-            this.api.post(`/messages`, {
-                chat_id: chatId,
-                text: this.newMessage
-            })
-                .then((res) => {
-                    this.messages.push(res.message);
-                    this.newMessage = '';
+            const messageText = this.newMessage;
+            const tempId = `temp-${this.tempMessageId++}`;
 
-                    this.$nextTick(() => {
-                        this.scrollBottom();
-                    });
-                });
+            this.newMessage = '';
+
+            const channel = window.Echo.private('chat.' + chatId);
+
+            const tempMsg = {
+                id: tempId,
+                chat_id: chatId,
+                user_id: this.myId,
+                text: messageText,
+                isTemp: true,
+            };
+
+            channel.whisper('message', tempMsg);
+
+            this.messages.push(tempMsg);
+
+            this.$nextTick(() => {
+                this.scrollBottom();
+            });
+
+            try {
+                await this.api.post(`/messages`, {
+                    chat_id: chatId,
+                    text: messageText
+                })
+            } catch (error) {
+                console.error('Failed to save message to database:', error);
+            }
         }
     }
 };

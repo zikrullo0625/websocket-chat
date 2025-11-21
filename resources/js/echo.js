@@ -14,7 +14,7 @@ window.Echo = new Echo({
     authEndpoint: 'http://127.0.0.1:8000/broadcasting/auth',
     auth: {
         headers: {
-            Authorization: 'Bearer ' + localStorage.getItem('auth_token')
+            Authorization: 'Bearer ' + localStorage.getItem('token')
         }
     }
 });
