@@ -26,43 +26,50 @@ export default {
     name: 'Chat',
     data() {
         return {
+            ws: null,
             messages: [],
             newMessage: '',
             myId: Number(localStorage.getItem('userId')) || 0,
-            otherUser: null,
-            tempMessageId: 0
+            otherUser: null
         };
     },
     mounted() {
         this.fetchMessages();
         this.initializeWebsocket();
-        this.scrollBottom();
+        this.$nextTick(() => {
+            this.scrollBottom();
+        });
     },
     methods: {
         initializeWebsocket() {
-            const channel = window.Echo.private('chat.' + this.$route.params.id);
-            console.log(channel);
+            this.ws = new WebSocket('ws://localhost:6002');
 
-            channel.listenForWhisper('message', (e) => {
-                console.log('Whisper received:', e);
+            this.ws.onopen = () => {
+                console.log('Connected!');
 
-                this.messages.push({
-                    id: e.tempId,
-                    chat_id: e.chat_id,
-                    user_id: e.user_id,
-                    text: e.text,
-                    created_at: new Date().toISOString()
-                });
+                this.ws.send(JSON.stringify({
+                    type: "auth",
+                    user_id: this.myId
+                }));
+            };
 
-                this.$nextTick(() => {
-                    this.scrollBottom();
-                });
-            });
+            this.ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
 
+                if (data.type === "message") {
+                    this.messages.push({
+                        id: Date.now(),
+                        user_id: data.from,
+                        text: data.text
+                    });
 
-            channel.listen('MessageSent', (e) => {
-                console.log('MessageSent event:', e);
-            });
+                    this.$nextTick(() => this.scrollBottom());
+                }
+            };
+
+            this.ws.onerror = (err) => {
+                console.error(err);
+            };
         },
         async fetchMessages() {
             const chatId = this.$route.params.id;
@@ -83,37 +90,32 @@ export default {
             if (!this.newMessage.trim()) return;
 
             const chatId = this.$route.params.id;
-            const messageText = this.newMessage;
-            const tempId = `temp-${this.tempMessageId++}`;
 
-            this.newMessage = '';
+            const receivers = this.otherUser ? [this.otherUser.id] : [];
 
-            const channel = window.Echo.private('chat.' + chatId);
-
-            const tempMsg = {
-                id: tempId,
+            this.ws.send(JSON.stringify({
+                type: "message",
                 chat_id: chatId,
-                user_id: this.myId,
-                text: messageText,
-                isTemp: true,
-            };
+                from: this.myId,
+                text: this.newMessage,
+                to: receivers
+            }));
 
-            channel.whisper('message', tempMsg);
-
-            this.messages.push(tempMsg);
-
-            this.$nextTick(() => {
-                this.scrollBottom();
+            const res = await this.api.post(`/messages`, {
+                chat_id: chatId,
+                text: this.newMessage
             });
 
-            try {
-                await this.api.post(`/messages`, {
-                    chat_id: chatId,
-                    text: messageText
-                })
-            } catch (error) {
-                console.error('Failed to save message to database:', error);
-            }
+            this.messages.push({
+                id: res.id,
+                user_id: this.myId,
+                text: this.newMessage
+            });
+
+            this.newMessage = '';
+            await this.$nextTick(() => {
+                this.scrollBottom();
+            });
         }
     }
 };
